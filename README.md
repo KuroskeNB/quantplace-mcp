@@ -4,16 +4,21 @@ A lightweight [Model Context Protocol](https://modelcontextprotocol.io) server t
 
 ## What it does
 
-AI agents can call four read-only tools:
+AI agents can call six tools — four public, two authenticated:
 
-| Tool | Description |
-|---|---|
-| `search_datasets` | Search by title, category, tags, and price |
-| `get_dataset_metadata` | Column names, row count, description, vendor info |
-| `get_preview_sample` | 50-row preview rendered as a markdown table |
-| `get_vendor_profile` | Seller rating, bio, and active listings |
+| Tool | Auth | Description |
+|---|---|---|
+| `search_datasets` | — | Search by title, category, tags, and price |
+| `get_dataset_metadata` | — | Column names, row count, description, vendor info |
+| `get_preview_sample` | — | 50-row preview rendered as a markdown table |
+| `get_vendor_profile` | — | Seller rating, bio, and active listings |
+| `get_my_purchases` | API key | List all datasets you have purchased |
+| `get_download_url` | API key | Get a 15-min presigned download URL for a purchased dataset |
 
-No purchases are ever made automatically. The server only wraps public QuantPlace API endpoints.
+No purchases are ever made automatically.
+
+**Public tools** wrap QuantPlace's open REST endpoints — no account needed.
+**Authenticated tools** require a QuantPlace API key (generate one at [quantplace.io/mcp](https://quantplace.io/mcp) → API Key Management). Pass it as the `api_key` argument when calling the tool.
 
 ## Installation
 
@@ -108,7 +113,9 @@ Or to set the API URL:
 claude mcp add quantplace -e QUANTPLACE_API_URL=https://api.quantplace.io/api/v1 -- python /absolute/path/to/server.py
 ```
 
-## Example agent workflow
+## Example agent workflows
+
+### Discovery (no auth required)
 
 ```
 User: Find a BTC order book dataset under $50
@@ -128,6 +135,20 @@ Agent:
 4. get_vendor_profile(vendor_id="<vendor_id>")
    → Rating: 4.8/5.0 (23 reviews), member since 2025-11
    → Agent surfaces trust signals alongside recommendation
+```
+
+### Download a purchased dataset (requires API key)
+
+```
+User: Download the BTC dataset I bought
+
+Agent:
+1. get_my_purchases(api_key="<your-key>")
+   → Lists purchases with dataset_id, status, escrow dates
+
+2. get_download_url(api_key="<your-key>", dataset_id="<id>")
+   → Returns presigned URL + curl command (valid 15 min)
+   → Claude Code can run the curl command directly via Bash
 ```
 
 ## Architecture
