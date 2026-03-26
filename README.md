@@ -1,6 +1,6 @@
 # QuantPlace MCP Server
 
-A lightweight [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI agents search, inspect, and preview trading datasets from [QuantPlace](https://quantplace.io) without leaving the IDE.
+A lightweight [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI agents search, inspect, and preview trading datasets from [QuantPlace](https://quantplace.org) without leaving the IDE.
 
 ## What it does
 
@@ -18,7 +18,7 @@ AI agents can call six tools — four public, two authenticated:
 No purchases are ever made automatically.
 
 **Public tools** wrap QuantPlace's open REST endpoints — no account needed.
-**Authenticated tools** require a QuantPlace API key (generate one at [quantplace.io/mcp](https://quantplace.io/mcp) → API Key Management). Pass it as the `api_key` argument when calling the tool.
+**Authenticated tools** require a QuantPlace API key (generate one at [quantplace.org/mcp](https://quantplace.org/mcp) → API Key Management). Pass it as the `api_key` argument when calling the tool.
 
 ## Installation
 
@@ -39,7 +39,7 @@ uv pip install fastmcp httpx
 Set the API URL via environment variable (defaults to the production API):
 
 ```bash
-export QUANTPLACE_API_URL=https://api.quantplace.io/api/v1
+export QUANTPLACE_API_URL=https://api.quantplace.org/api/v1
 # For local development:
 export QUANTPLACE_API_URL=http://localhost:8000/api/v1
 ```
@@ -58,7 +58,7 @@ or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.io/api/v1"
+        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
       }
     }
   }
@@ -76,7 +76,7 @@ Add to `.cursor/mcp.json` in your project root, or `~/.cursor/mcp.json` globally
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.io/api/v1"
+        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
       }
     }
   }
@@ -94,7 +94,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.io/api/v1"
+        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
       }
     }
   }
@@ -110,7 +110,7 @@ claude mcp add quantplace -- python /absolute/path/to/server.py
 Or to set the API URL:
 
 ```bash
-claude mcp add quantplace -e QUANTPLACE_API_URL=https://api.quantplace.io/api/v1 -- python /absolute/path/to/server.py
+claude mcp add quantplace -e QUANTPLACE_API_URL=https://api.quantplace.org/api/v1 -- python /absolute/path/to/server.py
 ```
 
 ## Example agent workflows
