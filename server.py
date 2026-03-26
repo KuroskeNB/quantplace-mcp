@@ -28,7 +28,7 @@ import httpx
 from fastmcp import FastMCP
 
 API_BASE = os.getenv(
-    "QUANTPLACE_API_URL", "https://api.quantplace.io/api/v1"
+    "QUANTPLACE_API_URL", "https://api.quantplace.org/api/v1"
 ).rstrip("/")
 
 mcp = FastMCP(
@@ -36,7 +36,7 @@ mcp = FastMCP(
     instructions=(
         "Use this server to find, evaluate, preview, and download trading datasets on QuantPlace. "
         "Public flow (no auth): search_datasets → get_dataset_metadata → get_preview_sample → get_vendor_profile. "
-        "Authenticated flow (requires API key from quantplace.io/mcp): get_my_purchases → get_download_url. "
+        "Authenticated flow (requires API key from quantplace.org/mcp): get_my_purchases → get_download_url. "
         "All tools are read-only — no purchases are made automatically."
     ),
 )
@@ -336,7 +336,7 @@ def get_my_purchases(api_key: str) -> str:
         purchases: list = _get_authed("/transactions/purchases", api_key)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            return "Invalid API key. Generate one at quantplace.io/mcp → API Key Management."
+            return "Invalid API key. Generate one at quantplace.org/mcp → API Key Management."
         raise
 
     if not purchases:
@@ -382,9 +382,9 @@ def get_download_url(api_key: str, dataset_id: str) -> str:
         result: dict = _get_authed(f"/datasets/{dataset_id}/download", api_key)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            return "Invalid API key. Generate one at quantplace.io/mcp → API Key Management."
+            return "Invalid API key. Generate one at quantplace.org/mcp → API Key Management."
         if e.response.status_code == 403:
-            return f"No completed purchase found for dataset `{dataset_id}`. Purchase it first at quantplace.io/datasets/{dataset_id}."
+            return f"No completed purchase found for dataset `{dataset_id}`. Purchase it first at quantplace.org/datasets/{dataset_id}."
         raise
 
     if result.get("status") == "preparing":
