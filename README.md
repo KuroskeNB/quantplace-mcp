@@ -17,8 +17,13 @@ AI agents can call six tools — four public, two authenticated:
 
 No purchases are ever made automatically.
 
-**Public tools** wrap QuantPlace's open REST endpoints — no account needed.
-**Authenticated tools** require a QuantPlace API key (generate one at [quantplace.org/mcp](https://quantplace.org/mcp) → API Key Management). Pass it as the `api_key` argument when calling the tool.
+**Public tools** wrap QuantPlace's open REST endpoints — no account needed.  
+**Authenticated tools** require a QuantPlace API key (generate one at [quantplace.org/mcp](https://quantplace.org/mcp) → API Key Management).
+
+There are two ways to supply the key:
+
+- **Recommended:** set the `QUANTPLACE_API_KEY` environment variable in your IDE config. The tools will use it automatically with no argument needed.
+- **Per-call:** pass `api_key="your_key"` directly when calling the tool. Useful when an agent already has the key in context.
 
 ## Installation
 
@@ -32,16 +37,6 @@ Or with `uv`:
 
 ```bash
 uv pip install fastmcp httpx
-```
-
-## Configuration
-
-Set the API URL via environment variable (defaults to the production API):
-
-```bash
-export QUANTPLACE_API_URL=https://api.quantplace.org/api/v1
-# For local development:
-export QUANTPLACE_API_URL=http://localhost:8000/api/v1
 ```
 
 ## IDE Setup
@@ -58,7 +53,7 @@ or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
+        "QUANTPLACE_API_KEY": "your_key_here"
       }
     }
   }
@@ -76,7 +71,7 @@ Add to `.cursor/mcp.json` in your project root, or `~/.cursor/mcp.json` globally
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
+        "QUANTPLACE_API_KEY": "your_key_here"
       }
     }
   }
@@ -94,7 +89,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
       "command": "python",
       "args": ["/absolute/path/to/server.py"],
       "env": {
-        "QUANTPLACE_API_URL": "https://api.quantplace.org/api/v1"
+        "QUANTPLACE_API_KEY": "your_key_here"
       }
     }
   }
@@ -104,14 +99,17 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 ### Claude Code
 
 ```bash
-claude mcp add quantplace -- python /absolute/path/to/server.py
+claude mcp add quantplace -e QUANTPLACE_API_KEY=your_key_here -- python /absolute/path/to/server.py
 ```
 
-Or to set the API URL:
+Leave out `-e QUANTPLACE_API_KEY=...` if you only need the public tools.
 
-```bash
-claude mcp add quantplace -e QUANTPLACE_API_URL=https://api.quantplace.org/api/v1 -- python /absolute/path/to/server.py
-```
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `QUANTPLACE_API_KEY` | *(none)* | Your QuantPlace API key. Required for authenticated tools. |
+| `QUANTPLACE_API_URL` | `https://api.quantplace.org/api/v1` | Override to point at a local dev server. |
 
 ## Example agent workflows
 
@@ -122,19 +120,16 @@ User: Find a BTC order book dataset under $50
 
 Agent:
 1. search_datasets(query="BTC", category="orderbook_l2", max_price=50)
-   → Returns list of matching datasets with IDs
+   -> Returns list of matching datasets with IDs
 
 2. get_dataset_metadata(dataset_id="<id>")
-   → Columns: `timestamp`, `bid_price`, `bid_size`, `ask_price`, `ask_size`
-   → 50-row preview available
+   -> Columns: `timestamp`, `bid_price`, `bid_size`, `ask_price`, `ask_size`
 
 3. get_preview_sample(dataset_id="<id>")
-   → Renders full markdown table so the agent can analyze structure
-   → Agent generates a ready-to-use parsing script for the buyer
+   -> Renders full markdown table so the agent can analyze structure
 
 4. get_vendor_profile(vendor_id="<vendor_id>")
-   → Rating: 4.8/5.0 (23 reviews), member since 2025-11
-   → Agent surfaces trust signals alongside recommendation
+   -> Rating: 4.8/5.0 (23 reviews), member since 2025-11
 ```
 
 ### Download a purchased dataset (requires API key)
@@ -142,13 +137,20 @@ Agent:
 ```
 User: Download the BTC dataset I bought
 
-Agent:
-1. get_my_purchases(api_key="<your-key>")
-   → Lists purchases with dataset_id, status, escrow dates
+Agent (QUANTPLACE_API_KEY set in env):
+1. get_my_purchases()
+   -> Lists purchases with dataset_id, status, escrow dates
 
-2. get_download_url(api_key="<your-key>", dataset_id="<id>")
-   → Returns presigned URL + curl command (valid 15 min)
-   → Claude Code can run the curl command directly via Bash
+2. get_download_url(dataset_id="<id>")
+   -> Returns presigned URL + curl command (valid 15 min)
+```
+
+If the key is not in the environment, the agent can ask the user for it and pass it directly:
+
+```
+Agent:
+1. get_my_purchases(api_key="<user-provided-key>")
+2. get_download_url(dataset_id="<id>", api_key="<user-provided-key>")
 ```
 
 ## Architecture
