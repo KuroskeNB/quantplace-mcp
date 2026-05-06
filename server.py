@@ -6,23 +6,27 @@ Allows AI agents (Cursor, Claude Desktop, Windsurf, Claude Code) to search,
 inspect, and preview trading datasets from QuantPlace without leaving the IDE.
 
 Tools (public):
-  search_datasets       — Find datasets by title, category, tags, price
-  get_dataset_metadata  — Column names, row count, stats, description
-  get_preview_sample    — 50-row preview as a markdown table
-  get_vendor_profile    — Seller rating, bio, active listings
+  search_datasets       - Find datasets by title, category, tags, price
+  get_dataset_metadata  - Column names, row count, stats, description
+  get_preview_sample    - 50-row preview as a markdown table
+  get_vendor_profile    - Seller rating, bio, active listings
 
 Tools (require API key):
-  get_my_purchases      — List purchased datasets for the authenticated user
-  get_download_url      — Get a 15-min presigned download URL for a purchased dataset
+  get_my_purchases      - List purchased datasets for the authenticated user
+  get_download_url      - Get a 15-min presigned download URL for a purchased dataset
+
+Auth:
+  Set QUANTPLACE_API_KEY env var for automatic auth, or pass api_key per call.
 
 Usage:
   python server.py
-  QUANTPLACE_API_URL=http://localhost:8000/api/v1 python server.py
+  QUANTPLACE_API_URL=http://localhost:8000/api/v1 QUANTPLACE_API_KEY=your_key python server.py
 """
 
 import csv
 import io
 import os
+import uuid as _uuid
 
 import httpx
 from fastmcp import FastMCP
@@ -31,18 +35,54 @@ API_BASE = os.getenv(
     "QUANTPLACE_API_URL", "https://api.quantplace.org/api/v1"
 ).rstrip("/")
 
+_ENV_API_KEY: str = os.getenv("QUANTPLACE_API_KEY", "")
+
+_ALLOWED_FETCH_HOSTS = {
+    "quantplace.org",
+    "api.quantplace.org",
+    "r2.cloudflarestorage.com",
+}
+
 mcp = FastMCP(
     "QuantPlace",
     instructions=(
         "Use this server to find, evaluate, preview, and download trading datasets on QuantPlace. "
-        "Public flow (no auth): search_datasets → get_dataset_metadata → get_preview_sample → get_vendor_profile. "
-        "Authenticated flow (requires API key from quantplace.org/mcp): get_my_purchases → get_download_url. "
-        "All tools are read-only — no purchases are made automatically."
+        "Public flow (no auth): search_datasets -> get_dataset_metadata -> get_preview_sample -> get_vendor_profile. "
+        "Authenticated flow: get_my_purchases -> get_download_url. "
+        "API key is read from the QUANTPLACE_API_KEY env var by default; "
+        "you may also pass api_key directly to any authenticated tool. "
+        "Generate a key at quantplace.org/mcp. All tools are read-only."
     ),
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
+
+def _validate_uuid(value: str, label: str) -> str:
+    try:
+        _uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise ValueError(f"Invalid {label}: must be a UUID.")
+    return value
+
+
+def _validate_fetch_url(url: str) -> None:
+    parsed = httpx.URL(url)
+    host = parsed.host.lower()
+    if not any(host == h or host.endswith(f".{h}") for h in _ALLOWED_FETCH_HOSTS):
+        raise ValueError(f"Refusing to fetch from untrusted host: {host}")
+
+
+def _resolve_key(api_key: str) -> str:
+    key = api_key.strip() or _ENV_API_KEY
+    if not key:
+        raise ValueError(
+            "No API key available. Set the QUANTPLACE_API_KEY environment variable "
+            "or pass api_key directly to this tool. "
+            "Generate a key at quantplace.org/mcp."
+        )
+    return key
+
 
 def _get(path: str, params: dict | None = None) -> dict | list:
     clean_params = {k: v for k, v in (params or {}).items() if v is not None}
@@ -60,6 +100,7 @@ def _get_authed(path: str, api_key: str) -> dict | list:
 
 
 def _fetch_text(url: str) -> str:
+    _validate_fetch_url(url)
     with httpx.Client(timeout=30) as client:
         resp = client.get(url)
         resp.raise_for_status()
@@ -82,7 +123,7 @@ def _csv_to_markdown(text: str, max_rows: int = 50) -> str:
     return "\n".join(lines)
 
 
-# ── Tools ─────────────────────────────────────────────────────────────────────
+# -- Tools --------------------------------------------------------------------
 
 @mcp.tool()
 def search_datasets(
@@ -102,7 +143,7 @@ def search_datasets(
         tags:      Comma-separated tags. Dataset must match ALL supplied tags.
                    Example: "BTC,binance,1m"
         max_price: Maximum price in USD. 0 = no limit.
-        limit:     Number of results to return (1–60).
+        limit:     Number of results to return (1-60).
 
     Returns:
         A formatted list of matching datasets with key statistics.
@@ -160,13 +201,17 @@ def get_dataset_metadata(dataset_id: str) -> str:
         Structured metadata. Use get_preview_sample to see actual data rows.
     """
     try:
+        _validate_uuid(dataset_id, "dataset_id")
+    except ValueError as e:
+        return str(e)
+
+    try:
         dataset = _get(f"/datasets/{dataset_id}")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return f"Dataset `{dataset_id}` not found."
-        raise
+        return f"API error {e.response.status_code} fetching dataset metadata."
 
-    # Extract column names from the preview CSV (public endpoint)
     columns_info = "_(preview not available)_"
     row_count_str = ""
     try:
@@ -232,17 +277,26 @@ def get_preview_sample(dataset_id: str) -> str:
         A markdown table containing up to 50 rows of sample data.
     """
     try:
+        _validate_uuid(dataset_id, "dataset_id")
+    except ValueError as e:
+        return str(e)
+
+    try:
         preview_meta = _get(f"/datasets/{dataset_id}/preview")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return "Preview not available for this dataset."
-        raise
+        return f"API error {e.response.status_code} fetching preview."
 
     preview_url = preview_meta.get("preview_url", "")
     if not preview_url:
         return "Preview URL not available."
 
-    csv_text = _fetch_text(preview_url)
+    try:
+        csv_text = _fetch_text(preview_url)
+    except ValueError as e:
+        return str(e)
+
     if not csv_text.strip():
         return "Preview file is empty."
 
@@ -250,7 +304,7 @@ def get_preview_sample(dataset_id: str) -> str:
     expires = preview_meta.get("expires_in_seconds", 900)
 
     return (
-        f"## Preview Sample — `{dataset_id}`\n\n"
+        f"## Preview Sample -- `{dataset_id}`\n\n"
         f"{table}\n\n"
         f"_Preview URL expires in {expires // 60} minutes. "
         f"Purchase the full dataset for complete access with buyer-specific watermarking._"
@@ -272,11 +326,16 @@ def get_vendor_profile(vendor_id: str) -> str:
         Vendor profile summary with rating, bio, and up to 6 active listings.
     """
     try:
+        _validate_uuid(vendor_id, "vendor_id")
+    except ValueError as e:
+        return str(e)
+
+    try:
         profile = _get(f"/users/{vendor_id}/profile")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return "Vendor profile not found."
-        raise
+        return f"API error {e.response.status_code} fetching vendor profile."
 
     nickname = profile.get("nickname") or "Anonymous"
     rating = float(profile.get("vendor_rating", 0))
@@ -291,8 +350,8 @@ def get_vendor_profile(vendor_id: str) -> str:
         ds_price = float(ds.get("price", 0))
         ds_rating = float(ds.get("avg_rating", 0))
         listings_lines.append(
-            f"  - **{ds['title']}** — ${ds_price:.2f} "
-            f"(★ {ds_rating:.1f}, {ds.get('total_sales', 0)} sales) "
+            f"  - **{ds['title']}** -- ${ds_price:.2f} "
+            f"(* {ds_rating:.1f}, {ds.get('total_sales', 0)} sales) "
             f"[`{ds['id']}`]"
         )
 
@@ -319,25 +378,31 @@ def get_vendor_profile(vendor_id: str) -> str:
 
 
 @mcp.tool()
-def get_my_purchases(api_key: str) -> str:
+def get_my_purchases(api_key: str = "") -> str:
     """
     List all datasets purchased by the authenticated user.
 
-    Requires a QuantPlace API key (generate one at /mcp → API Key Management,
-    available to all registered users).
+    Requires a QuantPlace API key. Set the QUANTPLACE_API_KEY environment variable
+    for automatic auth, or pass api_key directly.
+    Generate a key at quantplace.org/mcp -> API Key Management.
 
     Args:
-        api_key: Your QuantPlace API key (X-API-Key).
+        api_key: Your QuantPlace API key. Optional if QUANTPLACE_API_KEY env var is set.
 
     Returns:
         A list of your purchases with status, amount, and dataset info.
     """
     try:
-        purchases: list = _get_authed("/transactions/purchases", api_key)
+        key = _resolve_key(api_key)
+    except ValueError as e:
+        return str(e)
+
+    try:
+        purchases: list = _get_authed("/transactions/purchases", key)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            return "Invalid API key. Generate one at quantplace.org/mcp → API Key Management."
-        raise
+            return "Invalid API key. Check your key at quantplace.org/mcp."
+        return f"API error {e.response.status_code} fetching purchases."
 
     if not purchases:
         return "No purchases found for this account."
@@ -347,7 +412,7 @@ def get_my_purchases(api_key: str) -> str:
         status = p.get("status", "unknown")
         amount = float(p.get("amount", 0))
         escrow = p.get("escrow_release_at", "")
-        escrow_str = f"  — escrow releases {escrow[:10]}" if escrow and status == "held" else ""
+        escrow_str = f"  -- escrow releases {escrow[:10]}" if escrow and status == "held" else ""
         lines.append(
             f"### {p.get('dataset_title', 'Unknown dataset')}\n"
             f"- **Dataset ID:** `{p.get('dataset_id')}`\n"
@@ -361,31 +426,45 @@ def get_my_purchases(api_key: str) -> str:
 
 
 @mcp.tool()
-def get_download_url(api_key: str, dataset_id: str) -> str:
+def get_download_url(dataset_id: str, api_key: str = "") -> str:
     """
     Get a presigned download URL for a purchased dataset.
 
     The URL is valid for 15 minutes and points to your watermarked copy of the archive.
     If the watermark is still being applied (usually within minutes of purchase),
-    this will return a "preparing" status — retry after 30 seconds.
+    this will return a "preparing" status -- retry after 30 seconds.
 
     Requires a QuantPlace API key and a completed or held purchase for the dataset.
+    Set the QUANTPLACE_API_KEY environment variable for automatic auth, or pass api_key directly.
 
     Args:
-        api_key:    Your QuantPlace API key (X-API-Key).
         dataset_id: The UUID of the dataset to download.
+        api_key:    Your QuantPlace API key. Optional if QUANTPLACE_API_KEY env var is set.
 
     Returns:
         A presigned download URL or a "preparing" status with retry guidance.
     """
     try:
-        result: dict = _get_authed(f"/datasets/{dataset_id}/download", api_key)
+        _validate_uuid(dataset_id, "dataset_id")
+    except ValueError as e:
+        return str(e)
+
+    try:
+        key = _resolve_key(api_key)
+    except ValueError as e:
+        return str(e)
+
+    try:
+        result: dict = _get_authed(f"/datasets/{dataset_id}/download", key)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            return "Invalid API key. Generate one at quantplace.org/mcp → API Key Management."
+            return "Invalid API key. Check your key at quantplace.org/mcp."
         if e.response.status_code == 403:
-            return f"No completed purchase found for dataset `{dataset_id}`. Purchase it first at quantplace.org/datasets/{dataset_id}."
-        raise
+            return (
+                f"No completed purchase found for dataset `{dataset_id}`. "
+                f"Purchase it first at quantplace.org/datasets/{dataset_id}."
+            )
+        return f"API error {e.response.status_code} fetching download URL."
 
     if result.get("status") == "preparing":
         return (
@@ -405,7 +484,7 @@ def get_download_url(api_key: str, dataset_id: str) -> str:
     )
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- Entry point --------------------------------------------------------------
 
 if __name__ == "__main__":
     mcp.run()
